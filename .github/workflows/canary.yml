@@ -1,0 +1,56 @@
+# cronmiss canary for GitHub Actions scheduled workflows.
+#
+# Lives in its own small PUBLIC repo (Actions minutes are free there).
+# PING_URL is a repository secret, never committed: anyone who knows it can fake pings.
+#
+# Two things GitHub does that this file accounts for:
+# - */5 is the shortest schedule; runs are routinely delayed and sometimes dropped.
+#   That delay is the data. The monitor's grace is wide (see canaries.json).
+# - Scheduled workflows in public repos are disabled after 60 days without repo
+#   activity. The monthly keepalive job makes an empty commit so that never happens.
+#   Verify after the first month that the schedule is still enabled.
+#
+# Before relying on this, read GitHub's Actions acceptable-use terms: the canary is
+# monitoring for the cronmiss project, but confirm that is within the terms.
+
+name: canary
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "17 3 1 * *" # monthly keepalive
+  workflow_dispatch:
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    if: github.event.schedule != '17 3 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - name: Ping cronmiss
+        env:
+          PING_URL: ${{ secrets.PING_URL }}
+        run: |
+          test -n "$PING_URL" || { echo "PING_URL secret is not set"; exit 1; }
+          curl -fsS -m 10 --retry 3 --retry-all-errors -X POST \
+            -A "cronmiss-canary/github-actions" -o /dev/null "$PING_URL"
+
+  keepalive:
+    if: github.event.schedule == '17 3 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Empty commit so GitHub keeps the schedule enabled
+        run: |
+          git config user.name "cronmiss-canary"
+          git config user.email "canary@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive $(date -u +%Y-%m)"
+          git push
