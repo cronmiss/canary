@@ -4,8 +4,9 @@
 # PING_URL is a repository secret, never committed: anyone who knows it can fake pings.
 #
 # Two things GitHub does that this file accounts for:
-# - */5 is the shortest schedule; runs are routinely delayed and sometimes dropped.
-#   That delay is the data. The monitor's grace is wide (see canaries.json).
+# - Hourly at :17, an odd minute away from GitHub's top-of-hour load. Nov 4-6 2026 a
+#   */5 schedule here ran only every 4-8 hours, so it measured throttling, not drops.
+#   Hourly with 45 min grace (canaries.json) shows each run GitHub drops outright.
 # - Scheduled workflows in public repos are disabled after 60 days without repo
 #   activity. The monthly keepalive job makes an empty commit so that never happens.
 #   Verify after the first month that the schedule is still enabled.
@@ -17,8 +18,8 @@ name: canary
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
-    - cron: "17 3 1 * *" # monthly keepalive
+    - cron: "17 * * * *"
+    - cron: "41 3 1 * *" # monthly keepalive, off :17 so it never shares a slot with the ping
   workflow_dispatch:
 
 concurrency:
@@ -27,7 +28,7 @@ concurrency:
 
 jobs:
   ping:
-    if: github.event.schedule != '17 3 1 * *'
+    if: github.event.schedule != '41 3 1 * *'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions: {}
@@ -41,7 +42,7 @@ jobs:
             -A "cronmiss-canary/github-actions" -o /dev/null "$PING_URL"
 
   keepalive:
-    if: github.event.schedule == '17 3 1 * *'
+    if: github.event.schedule == '41 3 1 * *'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
